@@ -1,0 +1,29 @@
+{
+  "name": "shoppelganger",
+  "version": "1.0.0",
+  "description": "Duplicate your Shopify store",
+  "main": "bin/index.js",
+  "bin": {
+    "shoppelganger": "./bin/index.js"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/itdoell/shoppelganger.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/itdoell/shoppelganger/issues"
+  },
+  "homepage": "https://github.com/itdoell/shoppelganger#readme",
+  "dependencies": {
+    "@shopify/themekit": "^1.1.4",
+    "axios": "^0.19.2",
+    "js-yaml": "^3.14.0",
+    "node-fetch": "^2.6.0",
+    "yargs": "^15.4.1"
+  }
+}
