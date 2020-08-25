@@ -6,6 +6,9 @@ const themeKit = require('@shopify/themekit');
 const fetch = require("node-fetch");
 const yaml = require('js-yaml');
 const dir = require('os').homedir() + '/.shoppelganger'; //directory where we're saving the theme
+const pollFrequency = 2000; // for checking if a bulk operation has completed
+let productsArray = [];
+
 
 // setup arguments
 const options = yargs
@@ -13,6 +16,7 @@ const options = yargs
     .demandOption(['c', 't'])
     .argv;
 
+// read config file in shopify
 const config = yaml.load(fs.readFileSync('./config.yml', {
     encoding: 'utf-8'
 }));
@@ -28,7 +32,12 @@ const toStore = {
 }
 
 
+// listApps();
+// return false;
+
+
 console.log(`Copying ${options.c} to ${options.t}!`);
+
 
 
 // Get products from store using GraphQL
@@ -49,9 +58,11 @@ fetch(`https://${copyStore.store}/admin/api/graphql.json`, {
         		              node {
         		                id
         		                title
+                                description
         		                vendor
         		                productType
-        		                images(first: 10) {
+                                hasOnlyDefaultVariant
+        		                images {
         		                  edges {
         		                    node {
         		                      src
@@ -75,6 +86,8 @@ fetch(`https://${copyStore.store}/admin/api/graphql.json`, {
         		                    id
         		                    barcode
         		                    compareAtPrice
+                                    position
+                                    title
         		                    fulfillmentService {
         		                      id
         		                      inventoryManagement
@@ -105,6 +118,9 @@ fetch(`https://${copyStore.store}/admin/api/graphql.json`, {
         		                    sku
         		                    taxable
         		                    taxCode
+                                    images {
+                                      src
+                                    }
         		                  }
         		                }
         		              }
@@ -134,6 +150,7 @@ fetch(`https://${copyStore.store}/admin/api/graphql.json`, {
         return result.json();
     })
     .then(bulkOp => {
+        console.log(JSON.stringify(bulkOp));
         const bulkOperationGid = bulkOp.data.bulkOperationRunQuery.bulkOperation.id;
         console.log(bulkOperationGid);
         console.log(JSON.stringify(bulkOp));
@@ -172,14 +189,13 @@ function pollBulkOp(bulkOperationGid) {
   }).then(result => {
       return result.json();
   }).then(body => {
-      console.log('this is the body');
-      console.log(JSON.stringify(body));
-
+      // check if it's complete, if not poll again
+      // TODO: Add check if it breaks
       if(body.data.node.status !== 'COMPLETED') {
           console.log('not done yet, try again')
           setTimeout(() => {
               pollBulkOp(bulkOperationGid)
-          }, 2000);
+          }, pollFrequency);
       } else {
           console.log('done, parse options');
           parseBulkOp(body.data.node.url);
@@ -190,67 +206,131 @@ function pollBulkOp(bulkOperationGid) {
 }
 
 
-
-
 function parseBulkOp(url) {
     console.log('fetch jsonl from url',url);
     fetch(url)
     .then(res => {
         return res.text();
     })
-    .then(out => {
-        console.log('Output: ', out);
+    .then(data => {
+
+        let product = {};
+
+
+        var dataArr = data
+        .split("\n")
+        .filter(l => l);
+
+        dataArr.forEach((val, key, arr) => {
+          const obj = JSON.parse(val);
+          console.log(JSON.stringify(obj));
+
+          // new product
+          if(!obj.__parentId) {
+              // push the last product if it exists
+              if(Object.keys(product).length !== 0) {
+                  productsArray.push(product);
+              }
+
+              // start building new product
+              product = {
+                  ...obj,
+                  images: []
+              };
+          }
+          // Add image to product
+          if(obj.src) {
+              product.images.push({src: obj.src});
+          }
+
+          // grab variant information
+          if(obj.id && obj.__parentId && !product.hasOnlyDefaultVariant) {
+              product.variants = product.variants || [];
+
+              let variant = {
+                  title: obj.title,
+                  position: obj.position,
+                  sku: obj.sku,
+                  price: obj.price,
+                  images: obj.images
+              }
+              product.variants.push(variant);
+          }
+          console.log(product);
+
+          console.log('data length',dataArr.length)
+
+          // if we're on the last iteration, push the product to the array
+          if (Object.is(dataArr.length - 1, key)) {
+              if(Object.keys(product).length !== 0) {
+                  productsArray.push(product);
+                  console.log(JSON.stringify(productsArray));
+              }
+              // start building the actual products
+              buildProducts(productsArray)
+          }
+
+
+        });
+
+
     }).catch(err => console.error(err));
 }
 
 
-
-
-
 function buildProducts(products) {
 
+    console.log('building products array');
 
-    var productString = '';
+    let productString = '';
 
-    for (let i = 0; i < products.data.products.edges.length; i++) {
-        let product = products.data.products.edges[i].node;
-
-
+    for (let i = 0; i < products.length; i++) {
+        let product = products[i];
         let variantString = '';
-        for (let i = 0; i < product.variants.edges.length; i++) {
-            let variant = product.variants.edges[i].node;
+        if(product.variants) {
+            for (let i = 0; i < product.variants.length; i++) {
+                let variant = product.variants[i];
 
-            variantString += `
-                {
-                    title: "${variant.title}"
-                    position: ${variant.position}
-                    sku: "${variant.sku}"
-                    price: "${variant.price}"
-                    options: ${JSON.stringify(variant.title.split("/").map(x => x.trim()))}
-                },
+                // let arrayString = ``;
 
-            `
-            // console.log(variantString);
+                // console.log("ARRAY STRING", arrayString);
+
+                variantString += `
+                    {
+                        title: "${variant.title}"
+                        position: ${variant.position}
+                        sku: "${variant.sku}"
+                        price: "${variant.price}"
+                        options: "${variant.title}"
+                    },
+
+                `
+                // console.log(variantString);
+            }
         }
-        var images = product.images.edges.map(x => {
-            return x.node;
-        });
-        var img = JSON.stringify(images[0])
+
+        // let images = product.images.edges.map(x => {
+        //     return x.node;
+        // });
+        // let img = JSON.stringify(images[0])
         // console.log()
-        var imageObj = JSON.parse(img);
-        console.log('IMAGE' + imageObj.src);
+        // let imageObj = JSON.parse(img);
+        // console.log('IMAGE' + imageObj.src);
         // console.log('image source',);
+        let imageArrayString = ``;
+        for (let i = 0; i < product.images.length; i++) {
+            let image = product.images[i].src;
+            imageArrayString += `{src: "${image}"},`
+        }
+
         productString += `Product${i}: productCreate(input: {
             title: "${product.title}",
             productType: "${product.productType}",
             vendor: "${product.vendor}",
             options: ${JSON.stringify(product.options.map(x => x.name))},
             variants: [${variantString}],
-            images: [
-                {
-                src: "${imageObj.src}"
-                }
-            ]
+            images: [${imageArrayString}]
+
 
         }) {
           product {
@@ -279,30 +359,71 @@ function buildProducts(products) {
             // console.log("data returned:\n", data);
             // console.log(JSON.stringify(data));
             console.log('Finished creating products!')
+
+            transferTheme();
         });
 }
 
-// try {
-//     console.log('Downloading theme');
-//     // make directory if it doesn't already exist
-//     if (!fs.existsSync(dir)){
-//         fs.mkdirSync(dir);
-//     }
-//     // download the theme
-//     themeKit.command('download', {
-//         dir: dir,
-//         env: options.c
-//     }).then(function(){
-//         // deploy the theme
-//         console.log('Deploying theme');
-//         themeKit.command('deploy', {
-//             dir: dir,
-//             env: options.t
-//         }).then(function(){
-//             console.log('Theme deployment finished')
-//         })
-//     });
-//
-// } catch (e) {
-//     console.log(e);
-// }
+
+function transferTheme() {
+    try {
+        console.log('Downloading theme');
+        // make directory if it doesn't already exist
+        if (!fs.existsSync(dir)){
+            fs.mkdirSync(dir);
+        }
+        // download the theme
+        themeKit.command('download', {
+            dir: dir,
+            env: options.c
+        }).then(function(){
+            // deploy the theme
+            console.log('Deploying theme');
+            themeKit.command('deploy', {
+                dir: dir,
+                env: options.t
+            }).then(function(){
+                console.log('Theme deployment finished');
+
+            })
+        });
+
+    } catch (e) {
+        console.log(e);
+    }
+}
+
+
+function listApps() {
+    fetch(`https://${copyStore.store}/admin/api/graphql.json`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "X-Shopify-Access-Token": copyStore.token
+        },
+        body: JSON.stringify({
+            query: `{
+              appInstallations(first:5) {
+                edges {
+                  node {
+                    id
+                    app {
+                      id
+                      appStoreAppUrl
+                      description
+                      developerName
+                      title
+                      installUrl
+                    }
+                  }
+                }
+              }
+            }`
+        })
+    }).then(result => {
+        return result.json();
+    }).then(body => {
+        console.log(body);
+
+    }).catch(err => console.error(err));
+}
