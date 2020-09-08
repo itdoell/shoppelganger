@@ -236,13 +236,17 @@ function grabAndTransferProducts() {
             		                id
             		                title
                                     description
+                                    descriptionHtml
             		                vendor
             		                productType
                                     hasOnlyDefaultVariant
                                     tags
+                                    handle
+
             		                images {
             		                  edges {
             		                    node {
+                                          originalSrc
             		                      src
             		                    }
             		                  }
@@ -250,6 +254,7 @@ function grabAndTransferProducts() {
             		                options {
             		                  name
             		                  values
+                                      position
             		                }
             		              metafields {
             		                edges {
@@ -297,7 +302,10 @@ function grabAndTransferProducts() {
             		                    taxable
             		                    taxCode
                                         images {
+                                          id
                                           src
+                                          altText
+                                          transformedSrc
                                         }
             		                  }
             		                }
@@ -486,13 +494,13 @@ function buildProducts(products) {
 
                 let variantImageString = ``;
                 for (let i = 0; i < variant.images.length; i++) {
-                    variantImageString = variant.images[i].src;
+                    variantImageString = variant.images[i].src
                 }
                 console.log('***************************');
                 console.log('***************************');
                 console.log('***************************');
-                console.log(product.images[i].src);
-                console.log(variant.images[0].src);
+                // console.log(product.images[i].src);
+                // console.log(variant.images[0].src);
                 console.log('***************************');
                 console.log('***************************');
                 console.log('***************************');
@@ -504,7 +512,7 @@ function buildProducts(products) {
                         sku: "${variant.sku}"
                         price: "${variant.price}"
                         options: "${variant.title}"
-                        imageSrc: "${variant.images[0].src}"
+                        imageSrc: "${variantImageString}"
                     },
 
                 `
@@ -524,13 +532,15 @@ function buildProducts(products) {
 
 
         productString += `Product${i}: productCreate(input: {
-            title: "${product.title}",
-            productType: "${product.productType}",
-            vendor: "${product.vendor}",
-            options: ${JSON.stringify(product.options.map(x => x.name))},
-            variants: [${variantString}],
-            images: [${imageArrayString}],
-            tags: "${product.tags.join()}",
+            title: "${product.title}"
+            productType: "${product.productType}"
+            vendor: "${product.vendor}"
+            options: ${JSON.stringify(product.options.map(x => x.name))}
+            images: [${imageArrayString}]
+            tags: "${product.tags.join()}"
+            variants: [${variantString}]
+            handle: "${product.handle}"
+            bodyHtml: "${product.descriptionHtml.replace(/"/g, '\\"')}"
 
 
 
@@ -566,6 +576,9 @@ function buildProducts(products) {
             console.log("data returned:\n", JSON.stringify(data));
             // console.log(JSON.stringify(data));
             console.log('Finished creating products!')
+
+
+            console.log(productString);
             if(options.p) {
                 console.log('only products transferred');
                 return;
